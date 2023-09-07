@@ -57,7 +57,7 @@ def predict_rectangle_coordinates(img_path, model_path):
 
 if __name__ == "__main__":
     img_path = input("Enter the path of the image: ")
-    model_path = "ep_2.pth"
+    model_path = "new_test3ep.pth"
 
     coordinates = predict_rectangle_coordinates(img_path, model_path)
     print(f"Predicted Rectangle Coordinates: {coordinates}")
