@@ -91,6 +91,20 @@ def extract_info_from_line(line):
     return (img_num, (x, y, x2, y2))
 
 
+# Evaluation function
+def evaluate(model, dataloader, criterion):
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for images, coords in dataloader:
+            outputs = model(images)
+            loss = criterion(outputs, coords)
+            total_loss += loss.item()
+
+    return total_loss / len(dataloader)
+
+# train dataset
+
 hashmap = {}
 
 # Replace with the path to your csv file
@@ -102,9 +116,22 @@ with open(file_path, 'r') as file:
         if info:
             hashmap[info[0]] = info[1]
 
-# print(hashmap)
-#
-# print(hashmap['9983'])
+
+# test dataset
+
+hashmap_test = {}
+
+file_path_test = 'data/rectangle_ellipse_multimodal/test.csv'
+with open(file_path_test, 'r') as file:
+    reader = csv.reader(file, delimiter='|')
+    for line in reader:
+        info = extract_info_from_line(line)
+        if info:
+            hashmap_test[info[0]] = info[1]
+
+dataset_test = RectangleDataset("data/rectangle_ellipse_multimodal/test/rectangle", hashmap_test)
+dataloader_test = DataLoader(dataset_test, batch_size=32, shuffle=False)
+
 
 # Training pipeline
 dataset = RectangleDataset("data/rectangle_ellipse_multimodal/train/rectangle", hashmap)
@@ -115,6 +142,13 @@ criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 train(model, dataloader, criterion, optimizer, num_epochs=1)
+
+# Training the model
+train(model, dataloader, criterion, optimizer, num_epochs=1)
+
+# Evaluate on test set
+test_loss = evaluate(model, dataloader_test, criterion)
+print(f"Test Loss: {test_loss}")
 
 # Save the model after training
 model_save_path = f"{model_name}.pth"
