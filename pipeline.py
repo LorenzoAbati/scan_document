@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 model_name = input('model name: ')
 
+
 # Dataset creation
 class RectangleDataset(Dataset):
     def __init__(self, img_dir, hashmap, transform=None):
@@ -30,10 +31,12 @@ class RectangleDataset(Dataset):
         return image, coords
 
 
-# Add Data Augmentation for the training dataset
+# Updated Data Augmentation
 train_transforms = transforms.Compose([
     transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(10),
+    transforms.RandomRotation(20),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
     transforms.Resize((128, 128)),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -44,30 +47,36 @@ test_transforms = transforms.Compose([
 ])
 
 
-
-# CNN model
-# Add Dropout in the model
+# Updated CNN model
 class RectangleNet(nn.Module):
     def __init__(self):
         super(RectangleNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
-        self.fc1 = nn.Linear(32 * 32 * 32, 256)
-        self.dropout = nn.Dropout(0.5)  # Add dropout layer
-        self.fc2 = nn.Linear(256, 4)
+        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 128, 3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.fc1 = nn.Linear(128 * 16 * 16, 512)
+        self.dropout1 = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(512, 256)
+        self.dropout2 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(256, 4)
         self.relu = nn.ReLU()
+        self.maxpool = nn.MaxPool2d(2,2)
 
     def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.fc2(x)
+        x = self.maxpool(self.bn1(self.relu(self.conv1(x))))
+        x = self.maxpool(self.bn2(self.relu(self.conv2(x))))
+        x = self.relu(self.bn3(self.conv3(x)))
+        x = x.view(x.size(0), -1)  # Reshapes the tensor for the fully connected layer
+        x = self.dropout1(self.relu(self.fc1(x)))
+        x = self.dropout2(self.relu(self.fc2(x)))
+        x = self.fc3(x)
         return x
 
-# Training
-def train(model, dataloader, criterion, optimizer, num_epochs=10):
+
+def train(model, dataloader, criterion, optimizer, scheduler, num_epochs=10):
     for epoch in range(num_epochs):
         running_loss = 0.0
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}", leave=False)
@@ -79,8 +88,10 @@ def train(model, dataloader, criterion, optimizer, num_epochs=10):
             optimizer.step()
             running_loss += loss.item()
             progress_bar.set_postfix({"batch loss": loss.item()})
+        val_loss = evaluate(model, dataloader_test, criterion)
+        scheduler.step(val_loss) # Adjust learning rate based on validation loss
+        print(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {running_loss / len(dataloader)}, Val Loss: {val_loss}")
 
-        print(f"Epoch {epoch + 1}/{num_epochs}, Avg. Loss: {running_loss / len(dataloader)}")
 
 def extract_info_from_line(line):
     description = line[0]
@@ -155,13 +166,14 @@ dataloader_test = DataLoader(dataset_test, batch_size=32, shuffle=False)
 dataset = RectangleDataset("data/rectangle_ellipse_multimodal/train/rectangle", hashmap, transform=train_transforms)
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-# Modify how you initialize the datasets to pass the new transforms
 
 model = RectangleNet()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, verbose=True)
 
-train(model, dataloader, criterion, optimizer, num_epochs=5)
+train(model, dataloader, criterion, optimizer, scheduler, num_epochs=10)
+
 
 # Evaluate on test set
 test_loss = evaluate(model, dataloader_test, criterion)
